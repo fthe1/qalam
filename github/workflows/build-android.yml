@@ -1,0 +1,66 @@
+name: Build Android
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Unpack the web app
+        run: |
+          mkdir -p tmp app
+          unzip -q qalam-pwa.zip -d tmp
+          D=$(dirname "$(find tmp -name index.html | head -1)")
+          mv "$D" app/www
+          ls app/www
+
+      - name: Create Android project
+        working-directory: app
+        run: |
+          npm init -y
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.franco.qalam",
+            "appName": "صديقي قلم",
+            "webDir": "www"
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
+
+      - name: Generate app icons
+        working-directory: app
+        continue-on-error: true
+        run: |
+          mkdir -p assets
+          convert www/icons/maskable-512.png -resize 1024x1024 assets/icon-only.png
+          npx @capacitor/assets@3 generate --android
+
+      - name: Build APK and AAB
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug bundleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qalam-apk
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qalam-aab
+          path: app/android/app/build/outputs/bundle/release/app-release.aab
